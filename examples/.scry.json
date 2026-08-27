@@ -1,6 +1,5 @@
 {
   "defaultEnvironment": "staging",
-  "resultThreshold": 1000,
   "environments": {
     "local": {
       "token": "${env:SCRY_TOKEN}",

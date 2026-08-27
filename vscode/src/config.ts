@@ -30,7 +30,6 @@ export const scryConfigSchema = z
     defaultEnvironment: z.string().min(1),
     environments: z.record(environmentSchema),
     applications: z.array(applicationSchema).min(1),
-    resultThreshold: z.number().int().positive().default(1_000),
   })
   .strict()
   .superRefine((config, context) => {

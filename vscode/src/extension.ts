@@ -122,7 +122,7 @@ async function evaluate(extensionContext: vscode.ExtensionContext, options: Eval
     }),
   );
 
-  await displayResponses(editor, project.config, source.header, options.output, responses);
+  await displayResponses(editor, source.header, options.output, responses);
 }
 
 async function repeatLast(extensionContext: vscode.ExtensionContext): Promise<void> {
@@ -281,7 +281,6 @@ function selectedCode(editor: vscode.TextEditor): { code: string; header: string
 
 async function displayResponses(
   editor: vscode.TextEditor,
-  config: ScryConfig,
   header: string,
   output: "inline" | "panel",
   responses: Array<{ host: string; response: ScryResponse }>,
@@ -308,7 +307,7 @@ async function displayResponses(
     .map(({ host, response }) => `${responses.length > 1 ? `[${host}]\n` : ""}${responseText(response)}`)
     .join("\n\n");
 
-  if (output === "panel" || text.length > config.resultThreshold) {
+  if (output === "panel") {
     const panel = vscode.window.createWebviewPanel("scryResult", "Scry result", vscode.ViewColumn.Beside);
     panel.webview.html = `<!doctype html><html><body><pre>${escapeHtml(text)}</pre></body></html>`;
     return;

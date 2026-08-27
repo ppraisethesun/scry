@@ -9,11 +9,6 @@
       "type": "string",
       "minLength": 1
     },
-    "resultThreshold": {
-      "type": "integer",
-      "minimum": 1,
-      "default": 1000
-    },
     "environments": {
       "type": "object",
       "minProperties": 1,
