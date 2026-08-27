@@ -1,6 +1,8 @@
 defmodule Scry.ServerTest do
   use ExUnit.Case
 
+  import ExUnit.CaptureLog
+
   test "evaluates through packet-4 TCP and keeps session bindings" do
     port = free_port()
 
@@ -20,6 +22,20 @@ defmodule Scry.ServerTest do
     assert cleared["result"] == "Session cleared"
     assert after_clear["status"] == "error"
     assert after_clear["error"] =~ "CompileError"
+  end
+
+  test "logs the peer IP and a normalized code preview for evals" do
+    port = free_port()
+
+    start_supervised!({Scry, ip: {127, 0, 0, 1}, port: port, token: "secret"})
+
+    log =
+      capture_log(fn ->
+        response = request(port, eval_request("  value =\n  40 + 2  ", "request-1"))
+        assert response["status"] == "ok"
+      end)
+
+    assert log =~ ~s(Scry eval from 127.0.0.1: "value = 40 + 2")
   end
 
   defp eval_request(code, request_id) do
