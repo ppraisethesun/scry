@@ -15,9 +15,9 @@ This repository contains:
 VS Code -> Scry listener -> Code.eval_string
 ```
 
-Scry reads `.scry.json` from the active VS Code workspace. It maps the active
-file to an application, picks an environment, then connects to the configured
-private IP.
+Scry finds the nearest `mix.exs` above the active file and reads `.scry.json`
+from that Elixir project root. It maps the project-relative file to an
+application, picks an environment, then connects to the configured private IP.
 
 ## Start the server
 

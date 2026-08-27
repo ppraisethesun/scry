@@ -12,12 +12,12 @@ import {
   type ScryConfig,
 } from "./config.js";
 import type { EvalRequest, ScryRequest, ScryResponse } from "./protocol.js";
+import { findElixirProjectRoot } from "./project.js";
 import { escapeHtml, responseText } from "./render.js";
 
 interface ProjectContext {
   config: ScryConfig;
   application: ScryApplication;
-  workspaceFolder: vscode.WorkspaceFolder;
   workspaceKey: string;
 }
 
@@ -171,17 +171,14 @@ async function clearSession(extensionContext: vscode.ExtensionContext): Promise<
 }
 
 async function loadProject(editor: vscode.TextEditor): Promise<ProjectContext> {
-  const workspaceFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
-  if (!workspaceFolder) throw new Error("Active file is not inside a VS Code workspace");
-
-  const config = parseConfig(await readProjectConfig(workspaceFolder.uri.fsPath));
-  const relativeFilePath = path.relative(workspaceFolder.uri.fsPath, editor.document.uri.fsPath);
+  const projectRoot = await findElixirProjectRoot(editor.document.uri.fsPath);
+  const config = parseConfig(await readProjectConfig(projectRoot));
+  const relativeFilePath = path.relative(projectRoot, editor.document.uri.fsPath);
 
   return {
     config,
     application: findApplication(config, relativeFilePath),
-    workspaceFolder,
-    workspaceKey: workspaceFolder.uri.toString(),
+    workspaceKey: vscode.Uri.file(projectRoot).toString(),
   };
 }
 
@@ -195,7 +192,7 @@ async function readProjectConfig(workspaceRoot: string): Promise<string> {
     }
   }
 
-  throw new Error("No .scry.local.json or .scry.json found in workspace root");
+  throw new Error("No .scry.local.json or .scry.json found in Elixir project root");
 }
 
 function isMissingFile(error: unknown): error is NodeJS.ErrnoException {

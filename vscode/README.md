@@ -21,6 +21,7 @@ Install it:
 code --install-extension scry-vscode-0.1.0.vsix
 ```
 
-Extension reads `.scry.local.json`, then `.scry.json`, from active workspace
-root. Active file path selects application. Chosen environment persists in VS
-Code workspace state.
+Extension finds the nearest `mix.exs` above the active file, then reads
+`.scry.local.json` or `.scry.json` from that project root. The project-relative
+file path selects the application. Chosen environment persists per Elixir
+project in VS Code workspace state.
