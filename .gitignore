@@ -1,0 +1,15 @@
+.DS_Store
+
+# Elixir
+server/_build/
+server/deps/
+server/cover/
+
+# VS Code extension
+vscode/node_modules/
+vscode/dist/
+vscode/coverage/
+vscode/*.vsix
+
+# Local project config containing literal tokens
+.scry.local.json

@@ -1,0 +1,82 @@
+{
+  "name": "scry-vscode",
+  "displayName": "Scry",
+  "description": "Evaluate Elixir code on a running application.",
+  "version": "0.1.0",
+  "publisher": "scry",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["Other"],
+  "main": "./dist/extension.js",
+  "activationEvents": ["onLanguage:elixir"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "scry.eval",
+        "title": "Scry: Eval"
+      },
+      {
+        "command": "scry.evalInPanel",
+        "title": "Scry: Eval in Panel"
+      },
+      {
+        "command": "scry.pickTargetAndEval",
+        "title": "Scry: Pick Target and Eval"
+      },
+      {
+        "command": "scry.evalEverywhere",
+        "title": "Scry: Eval Everywhere"
+      },
+      {
+        "command": "scry.repeatLastEval",
+        "title": "Scry: Repeat Last Eval"
+      },
+      {
+        "command": "scry.changeEnvironment",
+        "title": "Scry: Change Environment"
+      },
+      {
+        "command": "scry.clearSession",
+        "title": "Scry: Clear Session"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "scry.pickTargetAndEval",
+        "key": "shift+f1",
+        "mac": "shift+f1",
+        "when": "editorLangId == elixir"
+      },
+      {
+        "command": "scry.eval",
+        "key": "shift+f2",
+        "mac": "shift+f2",
+        "when": "editorLangId == elixir"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": ["/.scry.json", "/.scry.local.json"],
+        "url": "./schemas/scry.schema.json"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --external:vscode --outfile=dist/extension.js",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "package": "npm run check && npm run test && esbuild src/extension.ts --bundle --minify --platform=node --external:vscode --outfile=dist/extension.js"
+  },
+  "dependencies": {
+    "minimatch": "^10.0.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.25.9",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

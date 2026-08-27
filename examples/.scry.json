@@ -1,0 +1,46 @@
+{
+  "defaultEnvironment": "staging",
+  "resultThreshold": 1000,
+  "environments": {
+    "local": {
+      "token": "${env:SCRY_TOKEN}",
+      "requireConfirmation": false,
+      "timeoutMs": 30000,
+      "targets": {
+        "accounts": {
+          "hosts": ["127.0.0.1"],
+          "port": 4321
+        },
+        "billing": {
+          "hosts": ["127.0.0.1"],
+          "port": 4322
+        }
+      }
+    },
+    "staging": {
+      "token": "${env:SCRY_TOKEN}",
+      "requireConfirmation": true,
+      "timeoutMs": 30000,
+      "targets": {
+        "accounts": {
+          "hosts": ["10.0.0.20", "10.0.0.21"],
+          "port": 4321
+        },
+        "billing": {
+          "hosts": ["10.0.0.20", "10.0.0.21"],
+          "port": 4322
+        }
+      }
+    }
+  },
+  "applications": [
+    {
+      "service": "accounts",
+      "paths": ["apps/accounts/**"]
+    },
+    {
+      "service": "billing",
+      "paths": ["apps/billing/**"]
+    }
+  ]
+}
