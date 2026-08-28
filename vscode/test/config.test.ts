@@ -12,6 +12,7 @@ const configJson = JSON.stringify({
       },
     },
     staging: {
+      protocol: "xrpc",
       token: "literal",
       requireConfirmation: true,
       targets: {
@@ -41,6 +42,7 @@ describe("Scry config", () => {
     expect(endpoint.hosts).toEqual(["10.0.0.20"]);
     expect(endpoint.requireConfirmation).toBe(true);
     expect(endpoint.token).toBe("literal");
+    expect(endpoint.protocol).toBe("xrpc");
   });
 
   it("fails when an environment token is missing", () => {

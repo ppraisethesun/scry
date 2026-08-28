@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { sendRequest } from "./client.js";
+import { sendEvalRequest, sendRequest } from "./client.js";
 import {
   findApplication,
   parseConfig,
@@ -23,7 +23,6 @@ interface ProjectContext {
 
 interface LastEvaluation {
   code: string;
-  header: string;
   output: "inline" | "panel";
   environmentName: string;
   host?: string;
@@ -89,7 +88,6 @@ async function evaluate(extensionContext: vscode.ExtensionContext, options: Eval
 
   lastEvaluation = {
     code: source.code,
-    header: source.header,
     output: options.output,
     environmentName,
     ...(pickedHost ? { host: pickedHost } : {}),
@@ -101,9 +99,10 @@ async function evaluate(extensionContext: vscode.ExtensionContext, options: Eval
       try {
         return {
           host,
-          response: await sendRequest(
+          response: await sendEvalRequest(
             { host, port: endpoint.port, timeoutMs: endpoint.timeoutMs },
             evalRequest(endpoint, sessionId, source.code),
+            endpoint.protocol,
           ),
         };
       } catch (error) {
@@ -122,7 +121,7 @@ async function evaluate(extensionContext: vscode.ExtensionContext, options: Eval
     }),
   );
 
-  await displayResponses(editor, source.header, options.output, responses);
+  await displayResponses(editor, options.output, responses);
 }
 
 async function repeatLast(extensionContext: vscode.ExtensionContext): Promise<void> {
@@ -146,6 +145,10 @@ async function clearSession(extensionContext: vscode.ExtensionContext): Promise<
   const project = await loadProject(editor);
   const environmentName = await activeEnvironment(extensionContext, project);
   const endpoint = resolveEndpoint(project.config, environmentName, project.application, process.env);
+  if (endpoint.protocol === "xrpc") {
+    vscode.window.showInformationMessage("XRPC targets do not keep persistent Scry sessions");
+    return;
+  }
   if (!(await confirmIfRequired(endpoint))) return;
 
   const sessionId = await workspaceSessionId(extensionContext, project);
@@ -270,18 +273,17 @@ function evalRequest(endpoint: ResolvedEndpoint, sessionId: string, code: string
   };
 }
 
-function selectedCode(editor: vscode.TextEditor): { code: string; header: string } {
+function selectedCode(editor: vscode.TextEditor): { code: string } {
   const code = editor.selection.isEmpty
     ? editor.document.getText().trim()
     : editor.document.getText(editor.selection).trim();
   if (code === "") throw new Error("No Elixir code to evaluate");
 
-  return { code, header: code.split("\n", 1)[0]?.slice(0, 80) ?? "eval" };
+  return { code };
 }
 
 async function displayResponses(
   editor: vscode.TextEditor,
-  header: string,
   output: "inline" | "panel",
   responses: Array<{ host: string; response: ScryResponse }>,
 ): Promise<void> {
@@ -328,7 +330,7 @@ async function displayResponses(
 
     editBuilder.insert(
       insertionPosition,
-      `${leadingNewline}${indentation}\"\"\"\n${bodyIndentation}@scry: ${header}\n${body}\n${indentation}\"\"\"\n`,
+      `${leadingNewline}${indentation}(\n${body}\n${indentation})\n`,
     );
   });
 }

@@ -13,6 +13,7 @@ This repository contains:
 
 ```text
 VS Code -> Scry listener -> Code.eval_string
+VS Code -> original DebugSocket -> XRPC.call(service, Code, :eval_string, [code])
 ```
 
 Scry finds the nearest `mix.exs` above the active file and reads `.scry.json`
@@ -53,6 +54,11 @@ port to the public internet. Scry grants code execution with application OS and
 database permissions. Restrict it to private networks or VPNs.
 
 ## Sessions
+
+Set `"protocol": "xrpc"` on an environment to use the original deployed
+DebugSocket protocol. `hosts`, `port`, `token`, and application `service` keep
+the same meaning. XRPC environments do not support persistent bindings or
+session clearing because the original server evaluates each request independently.
 
 VS Code creates one session ID per workspace. Server stores bindings per
 session and service for 30 minutes after last use:

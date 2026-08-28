@@ -17,6 +17,7 @@
       }
     },
     "staging": {
+      "protocol": "xrpc",
       "token": "${env:SCRY_TOKEN}",
       "requireConfirmation": true,
       "timeoutMs": 30000,

@@ -11,6 +11,7 @@ const endpointSchema = z.object({
 }).strict();
 
 const commonEnvironmentSchema = z.object({
+  protocol: z.enum(["scry", "xrpc"]).default("scry"),
   requireConfirmation: z.boolean().default(false),
   token: tokenSchema,
   timeoutMs: z.number().int().positive().default(30_000),
@@ -66,6 +67,7 @@ export interface ResolvedEndpoint {
   token: string;
   timeoutMs: number;
   requireConfirmation: boolean;
+  protocol: "scry" | "xrpc";
 }
 
 export function parseConfig(contents: string): ScryConfig {
@@ -114,7 +116,7 @@ export function resolveEndpoint(
   const target = environment.targets[application.service];
   if (!target) {
     throw new Error(
-      `Direct environment ${JSON.stringify(environmentName)} has no endpoint for ${JSON.stringify(application.service)}`,
+      `Environment ${JSON.stringify(environmentName)} has no endpoint for ${JSON.stringify(application.service)}`,
     );
   }
 
@@ -126,6 +128,7 @@ export function resolveEndpoint(
     token: resolveToken(target.token ?? environment.token, environmentVariables),
     timeoutMs: environment.timeoutMs,
     requireConfirmation: environment.requireConfirmation,
+    protocol: environment.protocol,
   };
 }
 
