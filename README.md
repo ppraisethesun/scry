@@ -74,6 +74,7 @@ one session on every selected gateway.
 - `Scry: Pick Target and Eval`, `Shift+F1`
 - `Scry: Eval in Panel`
 - `Scry: Eval Everywhere`
+- `Scry: Eval Changed Modules`
 - `Scry: Repeat Last Eval`
 - `Scry: Change Environment`
 - `Scry: Clear Session`

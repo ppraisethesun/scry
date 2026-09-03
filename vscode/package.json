@@ -29,6 +29,10 @@
         "title": "Scry: Eval Everywhere"
       },
       {
+        "command": "scry.evalChangedModules",
+        "title": "Scry: Eval Changed Modules"
+      },
+      {
         "command": "scry.repeatLastEval",
         "title": "Scry: Repeat Last Eval"
       },

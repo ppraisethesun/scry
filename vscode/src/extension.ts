@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { findChangedModules } from "./changed-modules.js";
 import { sendRequest } from "./client.js";
 import {
   findApplication,
@@ -18,6 +19,7 @@ import { escapeHtml, responseText } from "./render.js";
 interface ProjectContext {
   config: ScryConfig;
   application: ScryApplication;
+  projectRoot: string;
   workspaceKey: string;
 }
 
@@ -38,6 +40,7 @@ export function activate(extensionContext: vscode.ExtensionContext): void {
     "scry.evalInPanel": () => evaluate(extensionContext, { output: "panel" }),
     "scry.pickTargetAndEval": () => evaluate(extensionContext, { output: "inline", pickTarget: true }),
     "scry.evalEverywhere": () => evaluate(extensionContext, { output: "inline", everywhere: true }),
+    "scry.evalChangedModules": () => evalChangedModules(extensionContext),
     "scry.repeatLastEval": () => repeatLast(extensionContext),
     "scry.changeEnvironment": () => changeEnvironment(extensionContext),
     "scry.clearSession": () => clearSession(extensionContext),
@@ -48,6 +51,53 @@ export function activate(extensionContext: vscode.ExtensionContext): void {
       vscode.commands.registerCommand(command, () => handler().catch(showError)),
     );
   }
+}
+
+async function evalChangedModules(extensionContext: vscode.ExtensionContext): Promise<void> {
+  const project = await loadProject(requireEditor());
+  const modules = await findChangedModules(project.projectRoot);
+  if (modules.length === 0) {
+    vscode.window.showInformationMessage("Scry: no changed .ex modules found");
+    return;
+  }
+
+  const environmentName = await activeEnvironment(extensionContext, project);
+  const jobs = await Promise.all(
+    modules.map(async (module) => {
+      const application = findApplication(project.config, module.relativePath);
+      const endpoint = resolveEndpoint(project.config, environmentName, application, process.env);
+      return { ...module, code: await readFile(module.absolutePath, "utf8"), endpoint };
+    }),
+  );
+
+  const endpoints = new Map(jobs.map(({ endpoint }) => [endpoint.service, endpoint]));
+  for (const endpoint of endpoints.values()) {
+    if (!(await confirmIfRequired(endpoint))) return;
+  }
+
+  const sessionId = await workspaceSessionId(extensionContext, project);
+  const failures: string[] = [];
+
+  for (const job of jobs) {
+    const host = job.endpoint.hosts[0];
+    if (!host) throw new Error(`No host configured for ${job.endpoint.service}`);
+
+    try {
+      const response = await sendRequest(
+        { host, port: job.endpoint.port, timeoutMs: job.endpoint.timeoutMs },
+        evalRequest(job.endpoint, sessionId, job.code),
+      );
+      if (response.status === "error") failures.push(`${job.relativePath}: ${response.error}`);
+    } catch (error) {
+      failures.push(`${job.relativePath}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`Failed to evaluate ${failures.length}/${jobs.length} changed modules:\n${failures.join("\n")}`);
+  }
+
+  vscode.window.showInformationMessage(`Scry: evaluated ${jobs.length} changed modules`);
 }
 
 interface EvaluateOptions {
@@ -178,6 +228,7 @@ async function loadProject(editor: vscode.TextEditor): Promise<ProjectContext> {
   return {
     config,
     application: findApplication(config, relativeFilePath),
+    projectRoot,
     workspaceKey: vscode.Uri.file(projectRoot).toString(),
   };
 }
