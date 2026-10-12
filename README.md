@@ -13,6 +13,7 @@ This repository contains:
 
 ```text
 VS Code -> Scry listener -> Code.eval_string
+VS Code -> original DebugSocket -> XRPC.call(service, Code, :eval_string, [code])
 ```
 
 Scry finds the nearest `mix.exs` above the active file and reads `.scry.json`
@@ -54,6 +55,11 @@ database permissions. Restrict it to private networks or VPNs.
 
 ## Sessions
 
+Set `"protocol": "xrpc"` on an environment to use the original deployed
+DebugSocket protocol. `hosts`, `port`, `token`, and application `service` keep
+the same meaning. XRPC environments do not support persistent bindings or
+session clearing because the original server evaluates each request independently.
+
 VS Code creates one session ID per workspace. Server stores bindings per
 session and service for 30 minutes after last use:
 
@@ -78,5 +84,18 @@ one session on every selected gateway.
 - `Scry: Repeat Last Eval`
 - `Scry: Change Environment`
 - `Scry: Clear Session`
+
+`Eval Changed Modules` evaluates Git-changed `.ex` files and their transitive
+compile-time dependents, with dependencies evaluated first. It also includes
+struct/API dependents conservatively, while excluding runtime-only callers and
+test files. A native Quick Pick lists searchable groups of changed files and
+derived dependents, with evaluation positions and targets. Choose `Evaluate all`
+to confirm, or press Escape to cancel before sending any code. Dependency discovery runs
+`mise exec -- mix xref` against the last
+local compilation without compiling or starting the application. Compile locally
+first to create or refresh that graph after changing dependency relationships.
+Ambiguous umbrella source paths and direct compile-time dependency cycles are
+reported before any code is sent. Indirect runtime paths guide evaluation order
+when they do not conflict with direct compile dependencies.
 
 See component READMEs for development commands.

@@ -2,14 +2,18 @@
   "name": "scry-vscode",
   "displayName": "Scry",
   "description": "Evaluate Elixir code on a running application.",
-  "version": "0.1.0",
+  "version": "0.1.9",
   "publisher": "scry",
   "engines": {
     "vscode": "^1.90.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "main": "./dist/extension.js",
-  "activationEvents": ["onLanguage:elixir"],
+  "activationEvents": [
+    "onLanguage:elixir"
+  ],
   "contributes": {
     "commands": [
       {
@@ -61,12 +65,16 @@
     ],
     "jsonValidation": [
       {
-        "fileMatch": ["/.scry.json", "/.scry.local.json"],
+        "fileMatch": [
+          "/.scry.json",
+          "/.scry.local.json"
+        ],
         "url": "./schemas/scry.schema.json"
       }
     ]
   },
   "scripts": {
+    "vscode:prepublish": "npm run build",
     "build": "esbuild src/extension.ts --bundle --platform=node --external:vscode --outfile=dist/extension.js",
     "check": "tsc --noEmit",
     "test": "vitest run",

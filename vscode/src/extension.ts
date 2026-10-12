@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { sendEvalRequest, sendRequest } from "./client.js";
 import { findChangedModules } from "./changed-modules.js";
-import { sendRequest } from "./client.js";
 import {
   findApplication,
   parseConfig,
@@ -14,7 +14,7 @@ import {
 } from "./config.js";
 import type { EvalRequest, ScryRequest, ScryResponse } from "./protocol.js";
 import { findElixirProjectRoot } from "./project.js";
-import { escapeHtml, responseText } from "./render.js";
+import { escapeHtml, formatDuration, responseText } from "./render.js";
 
 interface ProjectContext {
   config: ScryConfig;
@@ -25,7 +25,6 @@ interface ProjectContext {
 
 interface LastEvaluation {
   code: string;
-  header: string;
   output: "inline" | "panel";
   environmentName: string;
   host?: string;
@@ -71,9 +70,49 @@ async function evalChangedModules(extensionContext: vscode.ExtensionContext): Pr
   );
 
   const endpoints = new Map(jobs.map(({ endpoint }) => [endpoint.service, endpoint]));
-  for (const endpoint of endpoints.values()) {
-    if (!(await confirmIfRequired(endpoint))) return;
+  const picker = vscode.window.createQuickPick();
+  const evaluateAll: vscode.QuickPickItem = {
+    label: `$(play) Evaluate all ${jobs.length} modules`,
+    detail: [...endpoints.values()].map((endpoint) => `${endpoint.service} (${endpoint.hosts[0]}:${endpoint.port})`).join(", "),
+    alwaysShow: true,
+  };
+  picker.title = `Scry: evaluate modules in ${environmentName}`;
+  picker.placeholder = "Search files to review; choose Evaluate all to confirm. Escape cancels.";
+  picker.matchOnDescription = true;
+  picker.matchOnDetail = true;
+  picker.items = [
+    evaluateAll,
+    ...(["changed", "dependent"] as const).flatMap((reason) => {
+      const items = jobs.flatMap((job, index) => job.reason === reason ? [{
+        label: path.basename(job.relativePath),
+        description: path.dirname(job.relativePath),
+        detail: `Evaluation ${index + 1} of ${jobs.length} · ${job.endpoint.service}`,
+      }] : []);
+      return [
+        { label: `${reason === "changed" ? "Changed files" : "Derived dependents"} (${items.length})`, kind: vscode.QuickPickItemKind.Separator },
+        ...items,
+      ];
+    }),
+  ];
+
+  // File rows are for review. Only the explicit Evaluate all action sends code.
+  const subscriptions: vscode.Disposable[] = [];
+  let confirmed: boolean;
+  try {
+    confirmed = await new Promise<boolean>((resolve) => {
+      subscriptions.push(
+        picker.onDidAccept(() => {
+          if (picker.selectedItems[0] === evaluateAll) resolve(true);
+        }),
+        picker.onDidHide(() => resolve(false)),
+      );
+      picker.show();
+    });
+  } finally {
+    for (const subscription of subscriptions) subscription.dispose();
+    picker.dispose();
   }
+  if (!confirmed) return;
 
   const sessionId = await workspaceSessionId(extensionContext, project);
   const failures: string[] = [];
@@ -83,9 +122,10 @@ async function evalChangedModules(extensionContext: vscode.ExtensionContext): Pr
     if (!host) throw new Error(`No host configured for ${job.endpoint.service}`);
 
     try {
-      const response = await sendRequest(
+      const response = await sendEvalRequest(
         { host, port: job.endpoint.port, timeoutMs: job.endpoint.timeoutMs },
         evalRequest(job.endpoint, sessionId, job.code),
+        job.endpoint.protocol,
       );
       if (response.status === "error") failures.push(`${job.relativePath}: ${response.error}`);
     } catch (error) {
@@ -94,10 +134,13 @@ async function evalChangedModules(extensionContext: vscode.ExtensionContext): Pr
   }
 
   if (failures.length > 0) {
-    throw new Error(`Failed to evaluate ${failures.length}/${jobs.length} changed modules:\n${failures.join("\n")}`);
+    throw new Error(`Failed to evaluate ${failures.length}/${jobs.length} modules:\n${failures.join("\n")}`);
   }
 
-  vscode.window.showInformationMessage(`Scry: evaluated ${jobs.length} changed modules`);
+  const evaluatedModules = jobs.map(({ relativePath }) => relativePath).join("\n");
+  vscode.window.showInformationMessage(
+    `Scry: evaluated ${jobs.length} modules:\n${evaluatedModules}`,
+  );
 }
 
 interface EvaluateOptions {
@@ -120,7 +163,6 @@ async function evaluate(extensionContext: vscode.ExtensionContext, options: Eval
     if (!picked) return;
     environmentName = picked.environmentName;
     pickedHost = picked.host;
-    await rememberEnvironment(extensionContext, project, environmentName);
   }
 
   const endpoint = resolveEndpoint(
@@ -139,7 +181,6 @@ async function evaluate(extensionContext: vscode.ExtensionContext, options: Eval
 
   lastEvaluation = {
     code: source.code,
-    header: source.header,
     output: options.output,
     environmentName,
     ...(pickedHost ? { host: pickedHost } : {}),
@@ -147,32 +188,44 @@ async function evaluate(extensionContext: vscode.ExtensionContext, options: Eval
   };
 
   const responses = await Promise.all(
-    hosts.map(async (host) => {
-      try {
-        return {
-          host,
-          response: await sendRequest(
-            { host, port: endpoint.port, timeoutMs: endpoint.timeoutMs },
-            evalRequest(endpoint, sessionId, source.code),
-          ),
-        };
-      } catch (error) {
-        return {
-          host,
-          response: {
-            version: 1 as const,
-            requestId: null,
-            status: "error" as const,
-            error: error instanceof Error ? error.message : String(error),
-            output: "",
-            diagnostics: [],
-          },
-        };
-      }
-    }),
+    hosts.map((host) =>
+      timedEvalRequest(host, endpoint, evalRequest(endpoint, sessionId, source.code)),
+    ),
   );
 
-  await displayResponses(editor, source.header, options.output, responses);
+  await displayResponses(editor, options.output, responses);
+}
+
+// Sends one eval request and reports how long the round trip took, turning
+// transport failures into error responses so every host still gets displayed.
+async function timedEvalRequest(
+  host: string,
+  endpoint: ResolvedEndpoint,
+  request: EvalRequest,
+): Promise<{ host: string; durationMs: number; response: ScryResponse }> {
+  const startedAt = Date.now();
+
+  try {
+    const response = await sendEvalRequest(
+      { host, port: endpoint.port, timeoutMs: endpoint.timeoutMs },
+      request,
+      endpoint.protocol,
+    );
+    return { host, durationMs: Date.now() - startedAt, response };
+  } catch (error) {
+    return {
+      host,
+      durationMs: Date.now() - startedAt,
+      response: {
+        version: 1,
+        requestId: null,
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+        output: "",
+        diagnostics: [],
+      },
+    };
+  }
 }
 
 async function repeatLast(extensionContext: vscode.ExtensionContext): Promise<void> {
@@ -196,6 +249,10 @@ async function clearSession(extensionContext: vscode.ExtensionContext): Promise<
   const project = await loadProject(editor);
   const environmentName = await activeEnvironment(extensionContext, project);
   const endpoint = resolveEndpoint(project.config, environmentName, project.application, process.env);
+  if (endpoint.protocol === "xrpc") {
+    vscode.window.showInformationMessage("XRPC targets do not keep persistent Scry sessions");
+    return;
+  }
   if (!(await confirmIfRequired(endpoint))) return;
 
   const sessionId = await workspaceSessionId(extensionContext, project);
@@ -321,28 +378,29 @@ function evalRequest(endpoint: ResolvedEndpoint, sessionId: string, code: string
   };
 }
 
-function selectedCode(editor: vscode.TextEditor): { code: string; header: string } {
+function selectedCode(editor: vscode.TextEditor): { code: string } {
   const code = editor.selection.isEmpty
     ? editor.document.getText().trim()
     : editor.document.getText(editor.selection).trim();
   if (code === "") throw new Error("No Elixir code to evaluate");
 
-  return { code, header: code.split("\n", 1)[0]?.slice(0, 80) ?? "eval" };
+  return { code };
 }
 
 async function displayResponses(
   editor: vscode.TextEditor,
-  header: string,
   output: "inline" | "panel",
-  responses: Array<{ host: string; response: ScryResponse }>,
+  responses: Array<{ host: string; durationMs: number; response: ScryResponse }>,
 ): Promise<void> {
   const failures = responses.filter(
-    (item): item is { host: string; response: Extract<ScryResponse, { status: "error" }> } =>
+    (item): item is { host: string; durationMs: number; response: Extract<ScryResponse, { status: "error" }> } =>
       item.response.status === "error",
   );
   if (failures.length > 0) {
     throw new Error(
-      failures.map(({ host, response }) => `${host}: ${responseText(response)}`).join("\n\n"),
+      failures
+        .map(({ host, durationMs, response }) => `${host}: ${responseText(response, durationMs)}`)
+        .join("\n\n"),
     );
   }
 
@@ -350,12 +408,17 @@ async function displayResponses(
     ({ response }) => response.status === "ok" && response.kind === "module",
   );
   if (moduleResponses.length === responses.length) {
-    vscode.window.showInformationMessage(moduleResponses.map(({ response }) => responseText(response)).join("; "));
+    vscode.window.showInformationMessage(
+      moduleResponses
+        .map(({ durationMs, response }) => `${responseText(response)} (${formatDuration(durationMs)})`)
+        .join("; "),
+    );
     return;
   }
 
   const text = responses
-    .map(({ host, response }) => `${responses.length > 1 ? `[${host}]\n` : ""}${responseText(response)}`)
+    .map(({ host, durationMs, response }) =>
+      `${responses.length > 1 ? `[${host}]\n` : ""}${responseText(response, durationMs)}`)
     .join("\n\n");
 
   if (output === "panel") {
@@ -379,7 +442,7 @@ async function displayResponses(
 
     editBuilder.insert(
       insertionPosition,
-      `${leadingNewline}${indentation}\"\"\"\n${bodyIndentation}@scry: ${header}\n${body}\n${indentation}\"\"\"\n`,
+      `${leadingNewline}${indentation}(\n${body}\n${indentation})\n`,
     );
   });
 }
@@ -395,4 +458,4 @@ function showError(error: unknown): void {
   vscode.window.showErrorMessage(`Scry: ${message}`);
 }
 
-export function deactivate(): void {}
+export function deactivate(): void { }

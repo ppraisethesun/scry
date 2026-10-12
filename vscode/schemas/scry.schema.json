@@ -53,6 +53,11 @@
       "additionalProperties": false,
       "required": ["token", "targets"],
       "properties": {
+        "protocol": {
+          "type": "string",
+          "enum": ["scry", "xrpc"],
+          "default": "scry"
+        },
         "token": { "$ref": "#/$defs/token" },
         "requireConfirmation": {
           "type": "boolean",
