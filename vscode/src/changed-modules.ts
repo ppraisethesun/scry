@@ -5,8 +5,14 @@ import path from "node:path";
 export interface ChangedModule {
   absolutePath: string;
   relativePath: string;
-  reason: "changed" | "dependent";
+  reason: ChangeReason;
 }
+
+// changed: edited in Git. dependent: reached from a changed file through
+// compile/export edges only. derived: a compile-time caller of something that
+// reaches a changed file at runtime; Mix would recompile it, but xref is
+// file-granular, so these are usually false positives and are opt-in.
+export type ChangeReason = "changed" | "dependent" | "derived";
 
 export async function findChangedModules(projectRoot: string): Promise<ChangedModule[]> {
   const [tracked, untracked] = await Promise.all([
@@ -43,8 +49,8 @@ export async function findChangedModules(projectRoot: string): Promise<ChangedMo
   }
 
   const candidates = affectedFiles(changed, resolvedGraph)
-    .filter((file) => files.includes(file) && file.endsWith(".ex") && !isTestPath(file));
-  const existing = await Promise.all(candidates.map(async (file) => {
+    .filter(({ file }) => files.includes(file) && file.endsWith(".ex") && !isTestPath(file));
+  const existing = await Promise.all(candidates.map(async ({ file }) => {
     try {
       await access(path.join(projectRoot, file));
       return true;
@@ -54,11 +60,7 @@ export async function findChangedModules(projectRoot: string): Promise<ChangedMo
     }
   }));
   return candidates.filter((_, index) => existing[index])
-    .map((relativePath) => ({
-      relativePath,
-      absolutePath: path.join(projectRoot, relativePath),
-      reason: changed.includes(relativePath) ? "changed" : "dependent",
-    }));
+    .map(({ file, reason }) => ({ relativePath: file, absolutePath: path.join(projectRoot, file), reason }));
 }
 
 type DependencyKind = "compile" | "export" | "runtime";
@@ -79,11 +81,11 @@ function parseDependencyGraph(output: string): DependencyGraph {
   return graph;
 }
 
-// Runtime callers become stale for propagation, but only compile/export
-// callers need reevaluation. This catches A ->compile B ->runtime changed C.
-function affectedFiles(changed: string[], graph: DependencyGraph): string[] {
-  const stale = new Set(changed);
-  const affected = new Set(changed);
+// Mirrors Mix recompilation: compile callers of any stale file (one reaching a
+// changed file through any edges, e.g. A ->compile B ->runtime changed C) and
+// export callers of any recompiled file need reevaluation. Files reached
+// without a runtime hop are "dependent"; the rest are "derived".
+function affectedFiles(changed: string[], graph: DependencyGraph): { file: string; reason: ChangeReason }[] {
   const callers = new Map<string, { file: string; kind: DependencyKind }[]>();
   for (const [file, dependencies] of graph) {
     for (const dependency of dependencies) {
@@ -92,16 +94,20 @@ function affectedFiles(changed: string[], graph: DependencyGraph): string[] {
       callers.set(dependency.file, entries);
     }
   }
-  const pending = [...changed];
-  for (const file of pending) {
-    for (const caller of callers.get(file) ?? []) {
-      if (caller.kind !== "runtime") affected.add(caller.file);
-      if (!stale.has(caller.file)) {
-        stale.add(caller.file);
-        pending.push(caller.file);
+  const closure = (kinds: DependencyKind[], start: Iterable<string>): Set<string> => {
+    const reached = new Set(start);
+    for (const file of reached) {
+      for (const caller of callers.get(file) ?? []) {
+        if (kinds.includes(caller.kind)) reached.add(caller.file);
       }
     }
-  }
+    return reached;
+  };
+  const dependent = closure(["compile", "export"], changed);
+  const stale = closure(["compile", "export", "runtime"], changed);
+  const staleCompileCallers = [...stale].flatMap((file) =>
+    (callers.get(file) ?? []).filter((caller) => caller.kind === "compile").map((caller) => caller.file));
+  const affected = closure(["compile", "export"], [...changed, ...staleCompileCallers]);
 
   const ordered: string[] = [];
   const visited = new Set<string>();
@@ -154,7 +160,10 @@ function affectedFiles(changed: string[], graph: DependencyGraph): string[] {
   ordered.length = 0;
   visited.clear();
   for (const file of [...affected].sort()) visit(file);
-  return ordered;
+  return ordered.map((file) => ({
+    file,
+    reason: changed.includes(file) ? "changed" : dependent.has(file) ? "dependent" : "derived",
+  }));
 }
 
 // Test support modules are compiled by the test run, not the running app, so

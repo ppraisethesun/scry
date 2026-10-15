@@ -69,42 +69,55 @@ async function evalChangedModules(extensionContext: vscode.ExtensionContext): Pr
     }),
   );
 
-  const endpoints = new Map(jobs.map(({ endpoint }) => [endpoint.service, endpoint]));
-  const picker = vscode.window.createQuickPick();
-  const evaluateAll: vscode.QuickPickItem = {
-    label: `$(play) Evaluate all ${jobs.length} modules`,
-    detail: [...endpoints.values()].map((endpoint) => `${endpoint.service} (${endpoint.hosts[0]}:${endpoint.port})`).join(", "),
+  // Derived dependents are opt-in: they come from runtime chains xref cannot
+  // see through, so they are usually false positives and can be hundreds.
+  const directJobs = jobs.filter(({ reason }) => reason !== "derived");
+  const actionDetail = (selected: typeof jobs) =>
+    [...new Map(selected.map(({ endpoint }) => [endpoint.service, endpoint])).values()]
+      .map((endpoint) => `${endpoint.service} (${endpoint.hosts[0]}:${endpoint.port})`).join(", ");
+  const evaluateDirect: vscode.QuickPickItem = {
+    label: `$(play) Evaluate ${directJobs.length} changed and dependent modules`,
+    detail: actionDetail(directJobs),
     alwaysShow: true,
   };
+  const evaluateAll: vscode.QuickPickItem = {
+    label: `$(warning) Evaluate all ${jobs.length} modules, including derived dependents`,
+    detail: actionDetail(jobs),
+    alwaysShow: true,
+  };
+  const labels = { changed: "Changed files", dependent: "Compile-time dependents", derived: "Derived dependents" };
+  const picker = vscode.window.createQuickPick();
   picker.title = `Scry: evaluate modules in ${environmentName}`;
-  picker.placeholder = "Search files to review; choose Evaluate all to confirm. Escape cancels.";
+  picker.placeholder = "Search files to review; choose an Evaluate action to confirm. Escape cancels.";
   picker.matchOnDescription = true;
   picker.matchOnDetail = true;
   picker.items = [
-    evaluateAll,
-    ...(["changed", "dependent"] as const).flatMap((reason) => {
-      const items = jobs.flatMap((job, index) => job.reason === reason ? [{
+    evaluateDirect,
+    ...(directJobs.length < jobs.length ? [evaluateAll] : []),
+    ...(["changed", "dependent", "derived"] as const).flatMap((reason) => {
+      const items = jobs.flatMap((job) => job.reason === reason ? [{
         label: path.basename(job.relativePath),
         description: path.dirname(job.relativePath),
-        detail: `Evaluation ${index + 1} of ${jobs.length} · ${job.endpoint.service}`,
+        detail: job.endpoint.service,
       }] : []);
-      return [
-        { label: `${reason === "changed" ? "Changed files" : "Derived dependents"} (${items.length})`, kind: vscode.QuickPickItemKind.Separator },
+      return items.length === 0 ? [] : [
+        { label: `${labels[reason]} (${items.length})`, kind: vscode.QuickPickItemKind.Separator },
         ...items,
       ];
     }),
   ];
 
-  // File rows are for review. Only the explicit Evaluate all action sends code.
+  // File rows are for review. Only the explicit Evaluate actions send code.
   const subscriptions: vscode.Disposable[] = [];
-  let confirmed: boolean;
+  let selected: typeof jobs | undefined;
   try {
-    confirmed = await new Promise<boolean>((resolve) => {
+    selected = await new Promise<typeof jobs | undefined>((resolve) => {
       subscriptions.push(
         picker.onDidAccept(() => {
-          if (picker.selectedItems[0] === evaluateAll) resolve(true);
+          if (picker.selectedItems[0] === evaluateDirect) resolve(directJobs);
+          if (picker.selectedItems[0] === evaluateAll) resolve(jobs);
         }),
-        picker.onDidHide(() => resolve(false)),
+        picker.onDidHide(() => resolve(undefined)),
       );
       picker.show();
     });
@@ -112,12 +125,12 @@ async function evalChangedModules(extensionContext: vscode.ExtensionContext): Pr
     for (const subscription of subscriptions) subscription.dispose();
     picker.dispose();
   }
-  if (!confirmed) return;
+  if (!selected) return;
 
   const sessionId = await workspaceSessionId(extensionContext, project);
   const failures: string[] = [];
 
-  for (const job of jobs) {
+  for (const job of selected) {
     const host = job.endpoint.hosts[0];
     if (!host) throw new Error(`No host configured for ${job.endpoint.service}`);
 
@@ -134,12 +147,12 @@ async function evalChangedModules(extensionContext: vscode.ExtensionContext): Pr
   }
 
   if (failures.length > 0) {
-    throw new Error(`Failed to evaluate ${failures.length}/${jobs.length} modules:\n${failures.join("\n")}`);
+    throw new Error(`Failed to evaluate ${failures.length}/${selected.length} modules:\n${failures.join("\n")}`);
   }
 
-  const evaluatedModules = jobs.map(({ relativePath }) => relativePath).join("\n");
+  const evaluatedModules = selected.map(({ relativePath }) => relativePath).join("\n");
   vscode.window.showInformationMessage(
-    `Scry: evaluated ${jobs.length} modules:\n${evaluatedModules}`,
+    `Scry: evaluated ${selected.length} modules:\n${evaluatedModules}`,
   );
 }
 

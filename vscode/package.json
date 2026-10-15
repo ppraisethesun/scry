@@ -2,7 +2,7 @@
   "name": "scry-vscode",
   "displayName": "Scry",
   "description": "Evaluate Elixir code on a running application.",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "publisher": "scry",
   "engines": {
     "vscode": "^1.90.0"

@@ -86,11 +86,13 @@ one session on every selected gateway.
 - `Scry: Clear Session`
 
 `Eval Changed Modules` evaluates Git-changed `.ex` files and their transitive
-compile-time dependents, with dependencies evaluated first. It also includes
-struct/API dependents conservatively, while excluding runtime-only callers and
-test files. A native Quick Pick lists searchable groups of changed files and
-derived dependents, with evaluation positions and targets. Choose `Evaluate all`
-to confirm, or press Escape to cancel before sending any code. Dependency discovery runs
+compile-time and struct/API dependents, with dependencies evaluated first,
+excluding runtime-only callers and test files. Compile-time callers that only
+reach a change through runtime calls (what Mix would recompile) are listed as
+derived dependents and are opt-in, since xref is file-granular and they can
+number in the hundreds. A native Quick Pick lists searchable groups with
+targets. Choose an `Evaluate` action to confirm, or press Escape to cancel
+before sending any code. Dependency discovery runs
 `mise exec -- mix xref` against the last
 local compilation without compiling or starting the application. Compile locally
 first to create or refresh that graph after changing dependency relationships.

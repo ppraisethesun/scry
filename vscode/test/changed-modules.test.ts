@@ -64,21 +64,24 @@ describe("changed module discovery", () => {
     expect(modules.map(({ reason }) => reason)).toEqual(["changed", "dependent", "dependent", "dependent"]);
   });
 
-  it("propagates changes through runtime dependencies and cycles to compile-time callers", async () => {
+  it("marks compile-time callers reached through runtime dependencies as derived, ignoring export callers of unrecompiled files", async () => {
     const projectRoot = await mkdtemp(path.join(tmpdir(), "scry-runtime-"));
     temporaryDirectories.push(projectRoot);
     await git(projectRoot, ["init"]);
     await writeMixProject(projectRoot);
     await write(projectRoot, "lib/z_value.ex", "defmodule Value do\n  def value, do: 1\n  def cycle, do: Bridge.value()\nend\n");
-    await write(projectRoot, "lib/bridge.ex", "defmodule Bridge do\n  def value, do: Value.value()\nend\n");
+    await write(projectRoot, "lib/bridge.ex", "defmodule Bridge do\n  defstruct [:value]\n  def value, do: Value.value()\nend\n");
     await write(projectRoot, "lib/a_capture.ex", "defmodule Capture do\n  @value Bridge.value()\n  def value, do: @value\nend\n");
+    await write(projectRoot, "lib/struct_user.ex", "defmodule StructUser do\n  def value, do: %Bridge{}\nend\n");
     await compile(projectRoot);
     await git(projectRoot, ["add", "."]);
     await git(projectRoot, ["-c", "user.name=Scry", "-c", "user.email=scry@example.com", "commit", "-m", "initial"]);
     await write(projectRoot, "lib/z_value.ex", "defmodule Value do\n  def value, do: 2\n  def cycle, do: Bridge.value()\nend\n");
 
     const modules = await findChangedModules(projectRoot);
-    expect(modules.map(({ relativePath }) => relativePath)).toEqual(["lib/z_value.ex", "lib/a_capture.ex"]);
+    expect(modules.map(({ relativePath, reason }) => [relativePath, reason])).toEqual([
+      ["lib/z_value.ex", "changed"], ["lib/a_capture.ex", "derived"],
+    ]);
   });
 
   it("reports a missing local compilation instead of silently omitting dependents", async () => {
