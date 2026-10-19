@@ -31,3 +31,14 @@ project in VS Code workspace state.
 Use `"protocol": "xrpc"` on environments backed by the original DebugSocket
 server. Connection fields remain `hosts`, `port`, and `token`; the matched
 application `service` becomes the XRPC node name.
+
+## Command-line client
+
+`src/cli.ts` is a command-line client built on the same config, protocol and transport modules as the extension. It is used by the agent `scry` skill and writes a Markdown log of each evaluation to `.scry-history/` beside the project's Scry config.
+
+```sh
+npm run build:cli   # writes dist/scry-cli.cjs, a dependency-free bundle
+node dist/scry-cli.cjs --project <mix-project> targets
+```
+
+After changing shared client code, rebuild and copy `dist/scry-cli.cjs` into the skill's `scripts/` directory.

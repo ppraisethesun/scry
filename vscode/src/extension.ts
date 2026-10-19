@@ -2,18 +2,17 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { sendEvalRequest, sendRequest } from "./client.js";
+import { evalRequest, sendEvalRequest, sendRequest } from "./client.js";
 import { findChangedModules } from "./changed-modules.js";
 import {
   findApplication,
-  parseConfig,
   resolveEndpoint,
   type ResolvedEndpoint,
   type ScryApplication,
   type ScryConfig,
 } from "./config.js";
 import type { EvalRequest, ScryRequest, ScryResponse } from "./protocol.js";
-import { findElixirProjectRoot } from "./project.js";
+import { findElixirProjectRoot, loadProjectConfig } from "./project.js";
 import { escapeHtml, formatDuration, responseText } from "./render.js";
 
 interface ProjectContext {
@@ -292,7 +291,7 @@ async function clearSession(extensionContext: vscode.ExtensionContext): Promise<
 
 async function loadProject(editor: vscode.TextEditor): Promise<ProjectContext> {
   const projectRoot = await findElixirProjectRoot(editor.document.uri.fsPath);
-  const config = parseConfig(await readProjectConfig(projectRoot));
+  const { config } = await loadProjectConfig(projectRoot);
   const relativeFilePath = path.relative(projectRoot, editor.document.uri.fsPath);
 
   return {
@@ -301,23 +300,6 @@ async function loadProject(editor: vscode.TextEditor): Promise<ProjectContext> {
     projectRoot,
     workspaceKey: vscode.Uri.file(projectRoot).toString(),
   };
-}
-
-async function readProjectConfig(workspaceRoot: string): Promise<string> {
-  for (const filename of [".scry.local.json", ".scry.json"]) {
-    try {
-      return await readFile(path.join(workspaceRoot, filename), "utf8");
-    } catch (error) {
-      if (isMissingFile(error)) continue;
-      throw error;
-    }
-  }
-
-  throw new Error("No .scry.local.json or .scry.json found in Elixir project root");
-}
-
-function isMissingFile(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 async function activeEnvironment(
@@ -377,18 +359,6 @@ async function confirmIfRequired(endpoint: ResolvedEndpoint): Promise<boolean> {
     "Evaluate",
   );
   return answer === "Evaluate";
-}
-
-function evalRequest(endpoint: ResolvedEndpoint, sessionId: string, code: string): EvalRequest {
-  return {
-    version: 1,
-    operation: "eval",
-    requestId: randomUUID(),
-    sessionId,
-    token: endpoint.token,
-    service: endpoint.service,
-    code,
-  };
 }
 
 function selectedCode(editor: vscode.TextEditor): { code: string } {
