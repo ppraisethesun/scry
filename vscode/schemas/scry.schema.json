@@ -51,7 +51,7 @@
     "environment": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["token", "targets"],
+      "required": ["targets"],
       "properties": {
         "protocol": {
           "type": "string",

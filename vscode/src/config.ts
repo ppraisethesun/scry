@@ -13,7 +13,8 @@ const endpointSchema = z.object({
 const commonEnvironmentSchema = z.object({
   protocol: z.enum(["scry", "xrpc"]).default("scry"),
   requireConfirmation: z.boolean().default(false),
-  token: tokenSchema,
+  // Default for targets without their own token.
+  token: tokenSchema.optional(),
   timeoutMs: z.number().int().positive().default(30_000),
 }).strict();
 
@@ -43,6 +44,15 @@ export const scryConfigSchema = z
     }
 
     for (const [name, environment] of Object.entries(config.environments)) {
+      for (const [service, target] of Object.entries(environment.targets)) {
+        if (target.token === undefined && environment.token === undefined) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["environments", name, "targets", service, "token"],
+            message: "no token on the target or its environment",
+          });
+        }
+      }
       for (const application of config.applications) {
         if (!(application.service in environment.targets)) {
           context.addIssue({
@@ -120,12 +130,18 @@ export function resolveEndpoint(
     );
   }
 
+  // parseConfig guarantees one of these; the check keeps hand-built configs honest.
+  const configuredToken = target.token ?? environment.token;
+  if (configuredToken === undefined) {
+    throw new Error(`No token configured for ${environmentName}/${application.service}`);
+  }
+
   return {
     environmentName,
     service: application.service,
     hosts: target.hosts,
     port: target.port,
-    token: resolveToken(target.token ?? environment.token, environmentVariables),
+    token: resolveToken(configuredToken, environmentVariables),
     timeoutMs: environment.timeoutMs,
     requireConfirmation: environment.requireConfirmation,
     protocol: environment.protocol,

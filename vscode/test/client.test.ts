@@ -34,8 +34,14 @@ describe("Scry client", () => {
   });
 
   it("does not send when beforeSend throws", async () => {
-    let received = false;
-    const port = await serve((socket) => socket.on("data", () => (received = true)));
+    // Resolves once the client hangs up, reporting whether any request bytes arrived.
+    let reportReceived: (received: boolean) => void = () => {};
+    const serverSide = new Promise<boolean>((resolve) => (reportReceived = resolve));
+    const port = await serve((socket) => {
+      let received = false;
+      socket.on("data", () => (received = true));
+      socket.once("close", () => reportReceived(received));
+    });
     const hooks = {
       beforeSend: () => {
         throw new Error("log failed");
@@ -44,7 +50,6 @@ describe("Scry client", () => {
     await expect(sendEvalRequest({ host: "127.0.0.1", port, timeoutMs: 1_000 }, request, "scry", hooks)).rejects.toThrow(
       "log failed",
     );
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(received).toBe(false);
+    await expect(serverSide).resolves.toBe(false);
   });
 });

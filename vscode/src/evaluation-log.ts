@@ -3,7 +3,14 @@ import path from "node:path";
 import { sendEvalRequest, type ConnectionTarget, type WireProtocol } from "./client.js";
 import type { EvalRequest, ScryResponse } from "./protocol.js";
 
-export const redactedToken = "[REDACTED SCRY TOKEN]";
+const redactedToken = "[REDACTED SCRY TOKEN]";
+
+type Outcome = "connection_error" | "unknown" | ScryResponse["status"];
+
+// Replaces the token, raw or JSON-escaped, wherever server data or errors may echo it.
+export function redact(text: string, token: string): string {
+  return text.replaceAll(token, redactedToken).replaceAll(JSON.stringify(token).slice(1, -1), redactedToken);
+}
 
 export interface LoggedEvaluation {
   // Directory holding the Scry config; logs go to `.scry-history/` inside it.
@@ -33,7 +40,7 @@ export async function evaluateWithLog(evaluation: LoggedEvaluation): Promise<{ r
   );
   process.stderr.write(`Evaluation log: ${logPath}\n`);
 
-  let outcome = "connection_error";
+  let outcome: Outcome = "connection_error";
   let details = "";
   try {
     const response = await sendEvalRequest(target, request, protocol, {
@@ -46,8 +53,10 @@ export async function evaluateWithLog(evaluation: LoggedEvaluation): Promise<{ r
     details = responseDetails(response);
     return { response, logPath };
   } catch (error) {
-    details = markdownBlock("clientError", error instanceof Error ? error.message : String(error));
-    throw error;
+    // Parse errors can quote server bytes, so the message is redacted before it reaches stderr.
+    const message = redact(error instanceof Error ? error.message : String(error), request.token);
+    details = markdownBlock("clientError", message);
+    throw new Error(message);
   } finally {
     try {
       append(`\nFinished: ${new Date().toISOString()}\nOutcome: ${outcome}\n${details}`);
@@ -73,7 +82,7 @@ function createLogFile(configDirectory: string, started: Date, requestId: string
 function appendLog(logPath: string, text: string, token: string): void {
   const descriptor = openSync(logPath, "a");
   try {
-    writeSync(descriptor, text.replaceAll(token, redactedToken));
+    writeSync(descriptor, redact(text, token));
     fsyncSync(descriptor);
   } finally {
     closeSync(descriptor);

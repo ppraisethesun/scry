@@ -7,7 +7,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { evalRequest } from "./client.js";
 import { resolveEndpoint } from "./config.js";
-import { evaluateWithLog, redactedToken } from "./evaluation-log.js";
+import { evaluateWithLog, redact } from "./evaluation-log.js";
 import { findMixRoot, loadProjectConfig } from "./project.js";
 
 const usage = `Usage:
@@ -100,8 +100,7 @@ async function main(argv: string[]): Promise<number> {
   });
 
   const output = JSON.stringify({ environment: environmentName, service, host, sessionId, log: logPath, response }, null, 2);
-  // JSON escapes characters independently, so the escaped token appears verbatim in the output.
-  console.log(output.replaceAll(JSON.stringify(endpoint.token).slice(1, -1), redactedToken));
+  console.log(redact(output, endpoint.token));
   return response.status === "ok" ? 0 : 1;
 }
 

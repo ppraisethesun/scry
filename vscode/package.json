@@ -76,7 +76,7 @@
   "scripts": {
     "vscode:prepublish": "npm run build",
     "build": "esbuild src/extension.ts --bundle --platform=node --external:vscode --outfile=dist/extension.js",
-    "build:cli": "esbuild src/cli.ts --bundle --platform=node --target=node20 --outfile=dist/scry-cli.cjs",
+    "build:cli": "esbuild src/cli.ts --bundle --platform=node --target=node20 --outfile=dist/scry-cli.cjs --banner:js=\"// Built from scry $(git describe --always --dirty) by npm run build:cli; do not edit.\"",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "package": "npm run check && npm run test && esbuild src/extension.ts --bundle --minify --platform=node --external:vscode --outfile=dist/extension.js"

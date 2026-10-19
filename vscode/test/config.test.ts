@@ -45,6 +45,26 @@ describe("Scry config", () => {
     expect(endpoint.protocol).toBe("xrpc");
   });
 
+  it("accepts per-target tokens without an environment token", () => {
+    const config = parseConfig(
+      JSON.stringify({
+        defaultEnvironment: "local",
+        environments: { local: { targets: { accounts: { hosts: ["127.0.0.1"], port: 4321, token: "target" } } } },
+        applications: [{ service: "accounts", paths: ["**"] }],
+      }),
+    );
+    expect(resolveEndpoint(config, "local", findApplication(config, "lib/a.ex"), {}).token).toBe("target");
+  });
+
+  it("rejects a target with no token anywhere", () => {
+    const config = JSON.stringify({
+      defaultEnvironment: "local",
+      environments: { local: { targets: { accounts: { hosts: ["127.0.0.1"], port: 4321 } } } },
+      applications: [{ service: "accounts", paths: ["**"] }],
+    });
+    expect(() => parseConfig(config)).toThrow("no token");
+  });
+
   it("fails when an environment token is missing", () => {
     expect(() => resolveToken("${env:SCRY_TOKEN}", {})).toThrow("SCRY_TOKEN");
   });
