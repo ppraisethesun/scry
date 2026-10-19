@@ -40,23 +40,28 @@ export async function evaluateWithLog(evaluation: LoggedEvaluation): Promise<{ r
   );
   process.stderr.write(`Evaluation log: ${logPath}\n`);
 
+  // Set once the request is about to be written; from then on it may execute on the server.
+  let sent = false;
   let outcome: Outcome = "connection_error";
   let details = "";
   try {
     const response = await sendEvalRequest(target, request, protocol, {
       beforeSend: () => {
         append("\nState: unknown (sending; execution may occur)\n");
-        outcome = "unknown";
+        sent = true;
       },
     });
     outcome = response.status;
     details = responseDetails(response);
     return { response, logPath };
   } catch (error) {
+    if (sent) outcome = "unknown";
     // Parse errors can quote server bytes, so the message is redacted before it reaches stderr.
     const message = redact(error instanceof Error ? error.message : String(error), request.token);
     details = markdownBlock("clientError", message);
-    throw new Error(message);
+    throw new Error(
+      sent ? `${message}\nThe request was sent and may have executed; do not automatically retry.` : `${message}\nNothing was sent.`,
+    );
   } finally {
     try {
       append(`\nFinished: ${new Date().toISOString()}\nOutcome: ${outcome}\n${details}`);

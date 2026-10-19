@@ -32,10 +32,12 @@ async function main(argv: string[]): Promise<number> {
     },
   });
 
+  const [command] = positionals;
+  if (command !== "targets" && command !== "eval") throw new Error(usage);
+
   const start = path.resolve(values.project);
   const projectRoot = await findMixRoot(statSync(start).isDirectory() ? start : path.dirname(start));
   const { path: configPath, config } = await loadProjectConfig(projectRoot);
-  const [command] = positionals;
 
   if (command === "targets") {
     // Lists what can be targeted without resolving or printing tokens.
@@ -55,7 +57,6 @@ async function main(argv: string[]): Promise<number> {
     console.log(JSON.stringify(listing, null, 2));
     return 0;
   }
-  if (command !== "eval") throw new Error(usage);
 
   const { environment: environmentName, service, host: requestedHost, "code-file": codeFile, session } = values;
   if (!environmentName || !service || !codeFile) throw new Error(`eval requires --environment, --service and --code-file\n${usage}`);
@@ -110,9 +111,7 @@ main(process.argv.slice(2)).then(
   },
   (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(
-      `Scry client failed: ${message}\nIf a request was sent, it may have executed; do not automatically retry.\n`,
-    );
+    process.stderr.write(`Scry client failed: ${message}\n`);
     process.exitCode = 2;
   },
 );

@@ -75,7 +75,7 @@ describe("evaluation log", () => {
     const directory = configDirectory();
 
     // Nothing listens on port 1, so the connection is refused.
-    await expect(evaluate(directory, 1)).rejects.toThrow();
+    await expect(evaluate(directory, 1)).rejects.toThrow("Nothing was sent");
 
     expect(readFileSync(logPath(directory), "utf8")).toContain("Outcome: connection_error");
   });
@@ -113,6 +113,7 @@ describe("evaluation log", () => {
 
     await expect(failure).rejects.toThrow("[REDACTED SCRY TOKEN]");
     await expect(failure).rejects.not.toThrow("secret-token");
+    await expect(failure).rejects.toThrow("may have executed");
   });
 });
 
